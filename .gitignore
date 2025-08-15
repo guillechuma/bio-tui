@@ -34,3 +34,5 @@ go.work.sum
 
 # test data
 testdata/
+
+.DS_Store
