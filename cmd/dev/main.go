@@ -34,6 +34,7 @@ func main() {
 		fmt.Printf("Successfully parsed record!\n")
 		fmt.Printf("\tID:  %s\n", record.ID)
 		fmt.Printf("\tSeq: %s\n", string(record.Seq))
+		fmt.Printf("\tGC Content: %.2f%%\n", record.GCContent()*100)
 	}
 
 	fmt.Println("Done.")
