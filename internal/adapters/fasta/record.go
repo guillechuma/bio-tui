@@ -1,5 +1,7 @@
 package fasta
 
+import "fmt"
+
 type SequenceType int
 
 const (
@@ -30,6 +32,25 @@ func (r *FastaRecord) Validate() bool {
 	}
 }
 
+func (r *FastaRecord) Slice(start, end int) ([]byte, error) {
+	// 1. Validate coordinates
+	seqLen := len(r.Seq)
+	if start < 1 || end > seqLen || start > end {
+		return nil, fmt.Errorf("invalid slice coordinates: start %d, end %d for sequence of length %d", start, end, seqLen)
+	}
+
+	// 2. Convert 1-based (human) to 0-based (Go) ---
+	// The 0-based start is simply start - 1.
+	// The 0-based end for Go's half-open slicing is just `end`.
+	zeroBasedStart := start - 1
+	zeroBasedEnd := end
+
+	// 3. Slice
+	subsequence := r.Seq[zeroBasedStart:zeroBasedEnd]
+
+	return subsequence, nil
+}
+
 // GCContent calculates the percentage of Guanine (G) and Cytosine (C)
 // bases in the sequence.
 func (r *FastaRecord) GCContent() float64 {
@@ -50,8 +71,6 @@ func (r *FastaRecord) GCContent() float64 {
 		}
 	}
 
-	// 4. Perform the final calculation.
-	// We must convert the numbers to float64 *before* dividing
-	// to ensure we get a floating-point result
+	// 4. GC calculation.
 	return float64(gcCount) / float64(len(r.Seq))
 }
