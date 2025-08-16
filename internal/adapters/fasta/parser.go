@@ -3,6 +3,7 @@ package fasta
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 )
@@ -70,10 +71,10 @@ func (p *Parser) Next() (*FastaRecord, error) {
 	record.Seq = seqBuilder.Bytes()
 	record.Type = InferSequenceType(record.Seq)
 
-	// Validation step
-	// if !isValidDNA(record.Seq) {
-	// 	return nil, fmt.Errorf("record %s contains invalid DNA characters", record.ID)
-	// }
+	// Now, validate the record based on its inferred type.
+	if !record.Validate() {
+		return nil, fmt.Errorf("record %s contains invalid characters for inferred type", record.ID)
+	}
 
 	return record, nil
 }
@@ -122,15 +123,73 @@ func parseHeaderLine(line string, record *FastaRecord) {
 	}
 }
 
-// isValidDNA checks if a sequence contains only valid DNA characters.
+// isValidDNA checks if a sequence contains only valid DNA characters,
+// including ambiguity codes.
 func isValidDNA(seq []byte) bool {
 	for _, base := range seq {
 		switch base {
-		case 'A', 'a', 'C', 'c', 'G', 'g', 'T', 't', 'N', 'n':
-			// This is a valid base, so we continue to the next one.
-			continue
+		// Standard Bases
+		case 'A', 'a', 'C', 'c', 'G', 'g', 'T', 't':
+		// Uracil is sometimes found
+		case 'U', 'u':
+		// Ambiguity Codes
+		case 'R', 'r', // A or G
+			'Y', 'y', // C or T
+			'S', 's', // G or C
+			'W', 'w', // A or T
+			'K', 'k', // G or T
+			'M', 'm', // A or C
+			'B', 'b', // C, G, or T
+			'D', 'd', // A, G, or T
+			'H', 'h', // A, C, or T
+			'V', 'v', // A, C, or G
+			'N', 'n': // Any
+		// Gaps are also common
+		case '-':
 		default:
-			return false
+			return false // Invalid character found
+		}
+	}
+	return true
+}
+
+// isValidRNA checks if a sequence contains only valid RNA characters,
+// including ambiguity codes.
+func isValidRNA(seq []byte) bool {
+	for _, base := range seq {
+		switch base {
+		// Standard Bases
+		case 'A', 'a', 'C', 'c', 'G', 'g', 'U', 'u':
+		// Ambiguity Codes (same as DNA)
+		case 'R', 'r', 'Y', 'y', 'S', 's', 'W', 'w',
+			'K', 'k', 'M', 'm', 'B', 'b', 'D', 'd',
+			'H', 'h', 'V', 'v', 'N', 'n':
+		// Gaps
+		case '-':
+		default:
+			return false // Invalid character found
+		}
+	}
+	return true
+}
+
+// isValidProtein checks if a sequence contains only valid amino acid characters.
+func isValidProtein(seq []byte) bool {
+	for _, aa := range seq {
+		switch aa {
+		// Standard 20 Amino Acids
+		case 'A', 'a', 'C', 'c', 'D', 'd', 'E', 'e', 'F', 'f',
+			'G', 'g', 'H', 'h', 'I', 'i', 'K', 'k', 'L', 'l',
+			'M', 'm', 'N', 'n', 'P', 'p', 'Q', 'q', 'R', 'r',
+			'S', 's', 'T', 't', 'V', 'v', 'W', 'w', 'Y', 'y':
+		// Ambiguity and Special Characters
+		case 'B', 'b', // Aspartic acid or Asparagine
+			'Z', 'z', // Glutamic acid or Glutamine
+			'X', 'x', // Any amino acid
+			'*', // Stop codon
+			'-': // Gap
+		default:
+			return false // Invalid character found
 		}
 	}
 	return true

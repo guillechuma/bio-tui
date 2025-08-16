@@ -16,6 +16,20 @@ type FastaRecord struct {
 	Type        SequenceType
 }
 
+// Validate checks a record's sequence against the alphabet of its inferred type.
+func (r *FastaRecord) Validate() bool {
+	switch r.Type {
+	case DNA:
+		return isValidDNA(r.Seq)
+	case RNA:
+		return isValidRNA(r.Seq)
+	case Protein:
+		return isValidProtein(R.seq)
+	default:
+		return false
+	}
+}
+
 // GCContent calculates the percentage of Guanine (G) and Cytosine (C)
 // bases in the sequence.
 func (r *FastaRecord) GCContent() float64 {

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"compress/gzip"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/guillechuma/bio-tui/internal/adapters/fasta"
@@ -11,14 +14,27 @@ import (
 
 func main() {
 	// Open the hardcoded test file.
-	f, err := os.Open("testdata/test.fasta")
+	filePath := "testdata/test.fasta"
+	f, err := os.Open(filePath)
 	if err != nil {
 		log.Fatalf("could not open test file: %v", err)
 	}
 	defer f.Close() // Make sure the file gets closed when main() exits.
 
+	var fileReader io.Reader = f
+
+	// Conditionally wrap the reader if the file is gzipped
+	if strings.HasSuffix(filePath, ".gz") {
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			log.Fatalf("could not create gzip reader: %v", err)
+		}
+		defer gz.Close()
+		fileReader = gz
+	}
+
 	// It assumes you have a NewParser function and a Next method.
-	parser := fasta.NewParser(f)
+	parser := fasta.NewParser(fileReader)
 
 	start := time.Now() // <-- 1. Record start time
 
