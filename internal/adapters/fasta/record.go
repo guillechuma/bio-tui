@@ -26,7 +26,7 @@ func (r *FastaRecord) Validate() bool {
 	case RNA:
 		return isValidRNA(r.Seq)
 	case Protein:
-		return isValidProtein(R.seq)
+		return isValidProtein(r.Seq)
 	default:
 		return false
 	}
