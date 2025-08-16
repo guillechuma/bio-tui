@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/guillechuma/bio-tui/internal/adapters/fasta"
 )
@@ -18,6 +19,8 @@ func main() {
 
 	// It assumes you have a NewParser function and a Next method.
 	parser := fasta.NewParser(f)
+
+	start := time.Now() // <-- 1. Record start time
 
 	// Loop through all the records in the file.
 	for {
@@ -37,5 +40,8 @@ func main() {
 		fmt.Printf("\tGC Content: %.2f%%\n", record.GCContent()*100)
 	}
 
+	duration := time.Since(start) // <-- 2. Calculate elapsed time
+
 	fmt.Println("Done.")
+	fmt.Printf("Parsing took: %s\n", duration) // <-- 3. Print it!
 }

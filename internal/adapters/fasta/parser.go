@@ -68,8 +68,47 @@ func (p *Parser) Next() (*FastaRecord, error) {
 	}
 
 	record.Seq = seqBuilder.Bytes()
+	record.Type = InferSequenceType(record.Seq)
+
+	// Validation step
+	// if !isValidDNA(record.Seq) {
+	// 	return nil, fmt.Errorf("record %s contains invalid DNA characters", record.ID)
+	// }
 
 	return record, nil
+}
+
+// InferSequenceType analyzes a byte slice and returns the likely sequence type.
+func InferSequenceType(seq []byte) SequenceType {
+	// Flags to track which character sets we've seen.
+	hasT := false
+	hasU := false
+	hasProteinChars := false
+
+	for _, base := range seq {
+		switch base {
+		case 'T', 't':
+			hasT = true
+		case 'U', 'u':
+			hasU = true
+			// Check for amino acids that are not also ambiguity codes for DNA/RNA
+		case 'E', 'e', 'F', 'f', 'I', 'i', 'L', 'l', 'P', 'p', 'Q', 'q', 'Z', 'z', 'X', 'x', '*':
+			hasProteinChars = true
+		}
+	}
+
+	if hasProteinChars {
+		return Protein
+	}
+	if hasT && hasU {
+		return UnknownSequence
+	}
+	if hasU {
+		return RNA
+	}
+	// If it has a T, or if it has neither T nor U (e.g. "ACGN"),
+	// we default to DNA, as it's the most common type.
+	return DNA
 }
 
 // parseHeaderLine takes a header line (e.g., ">ID Description")
@@ -81,4 +120,18 @@ func parseHeaderLine(line string, record *FastaRecord) {
 	if len(parts) > 1 {
 		record.Description = parts[1]
 	}
+}
+
+// isValidDNA checks if a sequence contains only valid DNA characters.
+func isValidDNA(seq []byte) bool {
+	for _, base := range seq {
+		switch base {
+		case 'A', 'a', 'C', 'c', 'G', 'g', 'T', 't', 'N', 'n':
+			// This is a valid base, so we continue to the next one.
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }

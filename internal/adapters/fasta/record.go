@@ -1,9 +1,19 @@
 package fasta
 
+type SequenceType int
+
+const (
+	UnknownSequence SequenceType = iota // Default 0
+	DNA
+	RNA
+	Protein
+)
+
 type FastaRecord struct {
 	ID          string
 	Description string
 	Seq         []byte
+	Type        SequenceType
 }
 
 // GCContent calculates the percentage of Guanine (G) and Cytosine (C)
