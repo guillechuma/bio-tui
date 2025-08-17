@@ -3,6 +3,7 @@ package index
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -51,4 +52,81 @@ func ParseFai(path string) (map[string]FaiRecord, error) {
 	}
 
 	return index, scanner.Err()
+}
+
+// BuildFai creates a .fai index for a given FASTA file.
+func BuildFai(fastaPath string) error {
+	// Open the input fasta
+	inFile, err := os.Open(fastaPath)
+	if err != nil {
+		return fmt.Errorf("could not open fasta file to build index: %w", err)
+	}
+	defer inFile.Close()
+
+	// Create the output .fai file.
+	outFile, err := os.Create(fastaPath + ".fai")
+	if err != nil {
+		return fmt.Errorf("could not create .fai file: %w", err)
+	}
+	defer outFile.Close()
+
+	// use a bufio.Reader for line-by-line reading with offset tracking.
+	reader := bufio.NewReader(inFile)
+	var byteOffset int64 = 0
+
+	// State variables for the current sequence record
+	var current struct {
+		name      string
+		length    int64
+		offset    int64
+		lineBases int64
+		lineBytes int64
+	}
+
+	for {
+		// Read one line, keeping track of how many bytes were consumed.
+		line, err := reader.ReadString('\n')
+		lineBytesRead := int64(len(line))
+
+		if err != nil && err != io.EOF {
+			return err // Handle unexpected errors
+		}
+
+		// Trim whitespace from the line for processing.
+		trimmedLine := strings.TrimSpace(line)
+
+		// Check if it's a header line.
+		if strings.HasPrefix(trimmedLine, ">") {
+			// If we were already tracking a sequence, we must write its entry first.
+			if current.name != "" {
+				fmt.Fprintf(outFile, "%s\t%d\t%d\t%d\t%d\n",
+					current.name, current.length, current.offset, current.lineBases, current.lineBytes)
+			}
+			// Start a new record.
+			current.name = strings.TrimSpace(trimmedLine[1:])
+			current.length = 0
+			current.lineBases = 0
+			current.offset = byteOffset + lineBytesRead // The first base is on the *next* line.
+		} else if current.name != "" && len(trimmedLine) > 0 {
+			// This is a sequence line for the current record.
+			current.length += int64(len(trimmedLine))
+			if current.lineBases == 0 {
+				// This is the first sequence line; record its dimensions.
+				current.lineBases = int64(len(trimmedLine))
+				current.lineBytes = lineBytesRead
+			}
+		}
+
+		byteOffset += lineBytesRead
+		if err == io.EOF {
+			break
+		}
+	}
+	// Write the very last record after the loop finishes.
+	if current.name != "" {
+		fmt.Fprintf(outFile, "%s\t%d\t%d\t%d\t%d\n",
+			current.name, current.length, current.offset, current.lineBases, current.lineBytes)
+	}
+
+	return nil
 }

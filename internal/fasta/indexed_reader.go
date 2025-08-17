@@ -17,6 +17,16 @@ type IndexedReader struct {
 
 // NewIndexedReader creates a reader by opening a FASTA file and parsing its .fai index.
 func NewIndexedReader(fastaPath string) (*IndexedReader, error) {
+	indexPath := fastaPath + ".fai"
+
+	// Check if the index file exists.
+	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
+		// if it does not exists, build it
+		fmt.Fprintf(os.Stderr, "[info] FASTA index not found. Building now at %s...\n", indexPath)
+		if err := index.BuildFai(fastaPath); err != nil {
+			return nil, fmt.Errorf("failed to build FASTA index: %w", err)
+		}
+	}
 	// 1. Open the main FASTA file. Keep it open.
 	fastaFile, err := os.Open(fastaPath)
 	if err != nil {
@@ -24,7 +34,7 @@ func NewIndexedReader(fastaPath string) (*IndexedReader, error) {
 	}
 
 	// 2. Open and parse the index file with ParseFai
-	idx, err := index.ParseFai(fastaPath + ".fai")
+	idx, err := index.ParseFai(indexPath)
 	if err != nil {
 		fastaFile.Close() // Clean up the already opened fasta file
 		return nil, err
