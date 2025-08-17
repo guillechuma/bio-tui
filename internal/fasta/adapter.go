@@ -35,6 +35,18 @@ func (a *FastaAdapter) Capabilities() adapter.Capability {
 	return adapter.CapSymbols | adapter.CapRegions
 }
 
+// ListSymbols returns a slice of all sequence IDs and their lengths.
+func (a *FastaAdapter) ListSymbols() ([]adapter.Symbol, error) {
+	symbols := make([]adapter.Symbol, 0, len(a.reader.Index)) // Array length in memory record length of index
+	for name, record := range a.reader.Index {
+		symbols = append(symbols, adapter.Symbol{
+			Name:   name,
+			Length: record.Length,
+		})
+	}
+	return symbols, nil
+}
+
 // LookupSymbol finds a sequence by its ID and returns its full region.
 func (a *FastaAdapter) LookupSymbol(sym string) (adapter.Region, error) {
 	// We need the length of the sequence, which is in the index.

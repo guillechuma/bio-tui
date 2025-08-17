@@ -7,6 +7,12 @@ type OpenSpec struct {
 	Aux   map[string]string // A map for any other auxiliary files the adapter might need.
 }
 
+// Symbol represents an entry in a list of named features, like sequence IDs
+type Symbol struct {
+	Name   string
+	Length int64
+}
+
 // Region defines a genomic interval. It is half-open: [Start, End).
 type Region struct {
 	Ref   string
@@ -40,6 +46,7 @@ type Reader interface {
 	Close() error
 	Capabilities() Capability
 	Region(reg Region) (Slice, error)
+	ListSymbols() ([]Symbol, error)
 	LookupSymbol(sym string) (Region, error)
 	IterRows(ch chan<- []string, stop <-chan struct{}) error
 }
