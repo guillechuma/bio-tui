@@ -55,6 +55,7 @@ func ParseFai(path string) (map[string]FaiRecord, error) {
 }
 
 // BuildFai creates a .fai index for a given FASTA file.
+// validating for consistent line lengths.
 func BuildFai(fastaPath string) error {
 	// Open the input fasta
 	inFile, err := os.Open(fastaPath)
@@ -76,24 +77,24 @@ func BuildFai(fastaPath string) error {
 
 	// State variables for the current sequence record
 	var current struct {
-		name      string
-		length    int64
-		offset    int64
-		lineBases int64
-		lineBytes int64
+		name                   string
+		length                 int64
+		offset                 int64
+		lineBases              int64
+		lineBytes              int64
+		isShortLineEncountered bool // <-- New flag to track state
 	}
 
 	for {
 		// Read one line, keeping track of how many bytes were consumed.
 		line, err := reader.ReadString('\n')
 		lineBytesRead := int64(len(line))
+		// Trim whitespace from the line for processing.
+		trimmedLine := strings.TrimSpace(line)
 
 		if err != nil && err != io.EOF {
 			return err // Handle unexpected errors
 		}
-
-		// Trim whitespace from the line for processing.
-		trimmedLine := strings.TrimSpace(line)
 
 		// Check if it's a header line.
 		if strings.HasPrefix(trimmedLine, ">") {
@@ -106,15 +107,32 @@ func BuildFai(fastaPath string) error {
 			current.name = strings.TrimSpace(trimmedLine[1:])
 			current.length = 0
 			current.lineBases = 0
-			current.offset = byteOffset + lineBytesRead // The first base is on the *next* line.
+			current.offset = byteOffset + lineBytesRead // The first base is on the *next* line
+			current.isShortLineEncountered = false      // Reset the flag.
 		} else if current.name != "" && len(trimmedLine) > 0 {
-			// This is a sequence line for the current record.
-			current.length += int64(len(trimmedLine))
+			// This is a sequence line.
+			// **VALIDATION 1: Check if we've already seen a short line.**
+			if current.isShortLineEncountered {
+				return fmt.Errorf("format error in sequence '%s': unexpected sequence data after a short line", current.name)
+			}
+
 			if current.lineBases == 0 {
-				// This is the first sequence line; record its dimensions.
+				// First sequence line; this sets the standard.
 				current.lineBases = int64(len(trimmedLine))
 				current.lineBytes = lineBytesRead
+			} else {
+				// **VALIDATION 2: Check for inconsistent line length.**
+				if int64(len(trimmedLine)) != current.lineBases {
+					// This line is shorter than the standard. It must be the last one.
+					if int64(len(trimmedLine)) > current.lineBases {
+						return fmt.Errorf("different line length in sequence '%s'", current.name)
+					}
+					// It's a short line. Set the flag.
+					current.isShortLineEncountered = true
+				}
 			}
+			// This is a sequence line for the current record.
+			current.length += int64(len(trimmedLine))
 		}
 
 		byteOffset += lineBytesRead
