@@ -36,7 +36,7 @@ func main() {
 	}
 
 	// 4. Create the TUI model with the data.
-	model := ui.NewModel(symbols)
+	model := ui.NewModel(symbols, reader)
 
 	// 5. Create and run the Bubble Tea program.
 	// Using WithAltScreen restores the terminal to its original state on exit.

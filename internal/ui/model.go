@@ -4,10 +4,20 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/guillechuma/bio-tui/internal/adapter"
+)
+
+type focusState int
+
+const (
+	focusList focusState = iota
+	focusViewport
 )
 
 // item represents a single sequence in our list. It needs to satisfy
@@ -27,12 +37,16 @@ func (i item) FilterValue() string { return i.symbol.Name }
 
 // Model holds the state of our TUI application.
 type Model struct {
+	adapter  adapter.Reader // Store the adapter to fetch data
 	list     list.Model
+	viewport viewport.Model // For the sequence viewer
+	styles   Styles
+	focus    focusState // <-- Add this
 	quitting bool
 }
 
 // NewModel creates and returns a new TUI model, initialized with the sequence symbols.
-func NewModel(symbols []adapter.Symbol) Model {
+func NewModel(symbols []adapter.Symbol, reader adapter.Reader) Model {
 	// 1. Convert our []adapter.Symbol into a []list.Item for the component.
 	items := make([]list.Item, len(symbols))
 	for i, sym := range symbols {
@@ -45,7 +59,16 @@ func NewModel(symbols []adapter.Symbol) Model {
 	ls.SetShowStatusBar(true)
 	ls.SetFilteringEnabled(true)
 
-	return Model{list: ls}
+	// The viewport is not visible yet, but we initialize it.
+	vp := viewport.New(0, 0)
+
+	return Model{
+		adapter:  reader,
+		list:     ls,
+		viewport: vp,
+		styles:   NewStyles(), // Initialize styles
+		focus:    focusList,   // <-- Start with the list focused
+	}
 }
 
 // Init is the first command that's run when the program starts.
@@ -55,24 +78,70 @@ func (m Model) Init() tea.Cmd {
 
 // Update is the main event loop. It handles messages and updates the model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	// Handle window resize events.
 	case tea.WindowSizeMsg:
-		m.list.SetSize(msg.Width, msg.Height)
+		// This is the total screen width and height.
+		screenWidth := msg.Width
+		screenHeight := msg.Height
+
+		// --- Calculate Pane Widths ---
+		// Get the horizontal "overhead" (borders + padding) from the styles.
+		listStyle := m.styles.Active
+		viewportStyle := m.styles.Inactive
+		listOverhead := listStyle.GetHorizontalFrameSize()
+		viewportOverhead := viewportStyle.GetHorizontalFrameSize()
+
+		// Define the width for the list pane (e.g., 1/3 of the screen).
+		listPaneWidth := screenWidth / 3
+		// The viewport gets the rest of the space.
+		viewportPaneWidth := screenWidth - listPaneWidth
+
+		// --- Set Component Sizes ---
+		// The list's content area is its pane width minus its style's overhead.
+		m.list.SetSize(listPaneWidth-listOverhead, screenHeight-2)
+
+		// The viewport's content area is its pane width minus its style's overhead.
+		m.viewport.Width = viewportPaneWidth - viewportOverhead
+		m.viewport.Height = screenHeight - 2
 
 	// Handle key presses.
 	case tea.KeyMsg:
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quitting = true
 			return m, tea.Quit
+
+		case "tab":
+			// Switch focus between the list and the viewport.
+			if m.focus == focusList {
+				m.focus = focusViewport
+			} else {
+				m.focus = focusList
+			}
+			return m, nil
 		}
 	}
 
-	// Pass all other messages to the list's own Update function.
-	// This handles scrolling, filtering, etc.
-	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
+	// --- Component-Specific Message Routing ---
+	// Instead of sending messages to both components, we now route them
+	// to only the component that has focus.
+	switch m.focus {
+	case focusList:
+		// The list is focused.
+		beforeIndex := m.list.Index()
+		m.list, cmd = m.list.Update(msg)
+		if m.list.Index() != beforeIndex {
+			// The selection changed, so update the viewport content.
+			return m, m.updateViewportContent()
+		}
+	case focusViewport:
+		// The viewport is focused, so only it should receive updates.
+		m.viewport, cmd = m.viewport.Update(msg)
+	}
 	return m, cmd
 }
 
@@ -81,6 +150,79 @@ func (m Model) View() string {
 	if m.quitting {
 		return "Bye!\n"
 	}
-	// Just render the list component.
-	return m.list.View()
+	// --- Dynamic Style Assignment ---
+	// Declare two local style variables.
+	var listStyle, viewportStyle lipgloss.Style
+
+	// Check which pane has focus and assign the Active/Inactive
+	// styles accordingly.
+	if m.focus == focusList {
+		listStyle = m.styles.Active
+		viewportStyle = m.styles.Inactive
+	} else { // focus == focusViewport
+		listStyle = m.styles.Inactive
+		viewportStyle = m.styles.Active
+	}
+	// Render the list and viewport into their own strings.
+	listView := listStyle.Render(m.list.View())
+	viewportView := viewportStyle.Render(m.viewport.View())
+
+	// Use lipgloss to join them horizontally.
+	return lipgloss.JoinHorizontal(lipgloss.Top, listView, viewportView)
+}
+
+// wrapSequence wraps a DNA sequence to fit within the viewport width
+func (m *Model) wrapSequence(sequence string) string {
+	if m.viewport.Width <= 0 {
+		return sequence
+	}
+
+	// 1. Get the style that will be used for the viewport pane.
+	style := m.styles.Inactive
+
+	// 2. Ask the style for its horizontal padding.
+	padding := style.GetHorizontalPadding()
+	lineWidth := m.viewport.Width - padding
+
+	if lineWidth <= 0 {
+		return sequence
+	}
+
+	var wrapped strings.Builder
+	for i := 0; i < len(sequence); i += lineWidth {
+		end := min(i+lineWidth, len(sequence))
+
+		if i > 0 {
+			wrapped.WriteString("\n")
+		}
+		wrapped.WriteString(sequence[i:end])
+	}
+
+	return wrapped.String()
+}
+
+// updateViewportContent is a new helper function to fetch and set the viewport data.
+func (m *Model) updateViewportContent() tea.Cmd {
+	// Get the currently selected item.
+	selectedItem, ok := m.list.SelectedItem().(item)
+	if !ok {
+		return nil
+	}
+
+	// Use the adapter to fetch the full sequence.
+	region := adapter.Region{Ref: selectedItem.symbol.Name, Start: 1, End: selectedItem.symbol.Length}
+	slice, err := m.adapter.Region(region)
+	if err != nil {
+		m.viewport.SetContent(fmt.Sprintf("Error: %v", err))
+		return nil
+	}
+
+	// c. Set the content of the viewport with this sequence data.
+	wrappedSequence := m.wrapSequence(string(slice.Sequence))
+	m.viewport.SetContent(wrappedSequence)
+
+	// Go back to the top of the viewport every time the content changes.
+	m.viewport.GotoTop()
+
+	return nil
 }
