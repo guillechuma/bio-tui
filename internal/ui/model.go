@@ -37,12 +37,13 @@ func (i item) FilterValue() string { return i.symbol.Name }
 
 // Model holds the state of our TUI application.
 type Model struct {
-	adapter  adapter.Reader // Store the adapter to fetch data
-	list     list.Model
-	viewport viewport.Model // For the sequence viewer
-	styles   Styles
-	focus    focusState // <-- Add this
-	quitting bool
+	adapter      adapter.Reader // Store the adapter to fetch data
+	list         list.Model
+	viewport     viewport.Model // For the sequence viewer
+	styles       Styles
+	focus        focusState
+	currentSlice adapter.Slice
+	quitting     bool
 }
 
 // NewModel creates and returns a new TUI model, initialized with the sequence symbols.
@@ -106,6 +107,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The viewport's content area is its pane width minus its style's overhead.
 		m.viewport.Width = viewportPaneWidth - viewportOverhead
 		m.viewport.Height = screenHeight - 2
+
+		// Re-wrap the content from the stored slice.
+		// The IsEmpty check for the slice is more robust than checking for an empty string.
+		if m.currentSlice.Sequence != nil {
+			wrappedSequence := m.wrapSequence(string(m.currentSlice.Sequence), 1)
+			m.viewport.SetContent(wrappedSequence)
+		}
 
 	// Handle key presses.
 	case tea.KeyMsg:
@@ -233,8 +241,11 @@ func (m *Model) updateViewportContent() tea.Cmd {
 		return nil
 	}
 
-	// c. Set the content of the viewport with this sequence data.
-	wrappedSequence := m.wrapSequence(string(slice.Sequence), 1)
+	// 1. Store the entire generic Slice object in model
+	m.currentSlice = slice
+
+	// 2. Wrap and set the content from the slice's Sequence field.
+	wrappedSequence := m.wrapSequence(string(m.currentSlice.Sequence), 1)
 	m.viewport.SetContent(wrappedSequence)
 
 	// Go back to the top of the viewport every time the content changes.
