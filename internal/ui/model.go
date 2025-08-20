@@ -171,8 +171,9 @@ func (m Model) View() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, listView, viewportView)
 }
 
-// wrapSequence wraps a DNA sequence to fit within the viewport width
-func (m *Model) wrapSequence(sequence string) string {
+// wrapSequence wraps a DNA sequence to fit within the viewport width,
+// prepending each line with its genomic coordinate.
+func (m *Model) wrapSequence(sequence string, startCoord int) string {
 	if m.viewport.Width <= 0 {
 		return sequence
 	}
@@ -182,20 +183,35 @@ func (m *Model) wrapSequence(sequence string) string {
 
 	// 2. Ask the style for its horizontal padding.
 	padding := style.GetHorizontalPadding()
-	lineWidth := m.viewport.Width - padding
+	// Define the width of our position indicator margin (e.g., "1234567890 ").
+	marginWidth := 11
+
+	// The space available for the sequence is the viewport's inner width minus our margin.
+	availableWidth := m.viewport.Width - padding
+	lineWidth := availableWidth - marginWidth
 
 	if lineWidth <= 0 {
 		return sequence
 	}
 
 	var wrapped strings.Builder
+	currentCoord := startCoord
 	for i := 0; i < len(sequence); i += lineWidth {
 		end := min(i+lineWidth, len(sequence))
 
 		if i > 0 {
 			wrapped.WriteString("\n")
 		}
+
+		// Prepend the formatted coordinate.
+		// The `%-10d` format right-pads the number with spaces to a width of 10.
+		coordMargin := fmt.Sprintf("%-10d", currentCoord)
+		wrapped.WriteString(coordMargin)
+
 		wrapped.WriteString(sequence[i:end])
+
+		// Increment our coordinate for the next line.
+		currentCoord += lineWidth
 	}
 
 	return wrapped.String()
@@ -218,7 +234,7 @@ func (m *Model) updateViewportContent() tea.Cmd {
 	}
 
 	// c. Set the content of the viewport with this sequence data.
-	wrappedSequence := m.wrapSequence(string(slice.Sequence))
+	wrappedSequence := m.wrapSequence(string(slice.Sequence), 1)
 	m.viewport.SetContent(wrappedSequence)
 
 	// Go back to the top of the viewport every time the content changes.
