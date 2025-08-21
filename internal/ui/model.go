@@ -45,6 +45,8 @@ type Model struct {
 	focus        focusState
 	currentSlice adapter.Slice
 	quitting     bool
+	width        int
+	height       int
 }
 
 // NewModel creates and returns a new TUI model, initialized with the sequence symbols.
@@ -85,36 +87,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// Handle window resize events.
 	case tea.WindowSizeMsg:
-		// This is the total screen width and height.
-		screenWidth := msg.Width
-		screenHeight := msg.Height
+		m.width = msg.Width
+		m.height = msg.Height
 
-		// --- Calculate Pane Widths ---
-		// Get the horizontal "overhead" (borders + padding) from the styles.
-		listStyle := m.styles.Active
-		viewportStyle := m.styles.Inactive
-		listOverhead := listStyle.GetHorizontalFrameSize()
-		viewportOverhead := viewportStyle.GetHorizontalFrameSize()
-
-		// Define the width for the list pane (e.g., 1/3 of the screen).
-		listPaneWidth := screenWidth / 3
-		// The viewport gets the rest of the space.
-		viewportPaneWidth := screenWidth - listPaneWidth
-
-		// --- Set Component Sizes ---
-		// The list's content area is its pane width minus its style's overhead.
-		m.list.SetSize(listPaneWidth-listOverhead, screenHeight-2)
-
-		// The viewport's content area is its pane width minus its style's overhead.
-		m.viewport.Width = viewportPaneWidth - viewportOverhead
-		m.viewport.Height = screenHeight - 2
-
-		// Re-wrap the content from the stored slice.
-		// The IsEmpty check for the slice is more robust than checking for an empty string.
-		if m.currentSlice.Sequence != nil {
-			wrappedSequence := m.wrapSequence(string(m.currentSlice.Sequence), 1)
-			m.viewport.SetContent(wrappedSequence)
+		// Get styles and their overhead
+		var listStyle, viewportStyle lipgloss.Style
+		if m.focus == focusList {
+			listStyle = m.styles.Active
+			viewportStyle = m.styles.Inactive
+		} else {
+			listStyle = m.styles.Inactive
+			viewportStyle = m.styles.Active
 		}
+
+		// Overheads (borders + padding + margins)
+		listH := listStyle.GetHorizontalFrameSize()
+		listV := listStyle.GetVerticalFrameSize()
+		vpH := viewportStyle.GetHorizontalFrameSize()
+		vpV := viewportStyle.GetVerticalFrameSize()
+
+		// Layout
+		listPaneWidth := m.width / 3
+		rightPaneWidth := m.width - listPaneWidth
+		statsPaneHeight := 7
+
+		// Size list (subtract both H and V frames)
+		m.list.SetSize(
+			listPaneWidth-listH,
+			m.height-listV, // <-- was m.height-2
+		)
+
+		// Size viewport (subtract both H and V frames)
+		m.viewport.Width = rightPaneWidth - vpH
+		m.viewport.Height = m.height - statsPaneHeight - vpV // <-- was ...-2
+
+		// Re-wrap the sequence with the new viewport width
+		if m.currentSlice.Sequence != nil {
+			wrapped := m.wrapSequence(string(m.currentSlice.Sequence), 1)
+			m.viewport.SetContent(wrapped)
+		}
+		return m, nil
 
 	// Handle key presses.
 	case tea.KeyMsg:
@@ -159,28 +171,28 @@ func (m Model) View() string {
 	if m.quitting {
 		return "Bye!\n"
 	}
-	// --- Dynamic Style Assignment ---
-	// Declare two local style variables.
-	var listStyle, viewportStyle lipgloss.Style
+	if m.width == 0 {
+		return "Initializing..."
+	}
 
-	// Check which pane has focus and assign the Active/Inactive
-	// styles accordingly.
+	// --- Dynamic Style Assignment ---
+	var listStyle, viewportStyle lipgloss.Style
 	if m.focus == focusList {
 		listStyle = m.styles.Active
 		viewportStyle = m.styles.Inactive
-	} else { // focus == focusViewport
+	} else {
 		listStyle = m.styles.Inactive
 		viewportStyle = m.styles.Active
 	}
-	// Render the list and viewport into their own strings.
+
+	// --- RENDER PANES ---
+	// NOTE: All sizing logic has been removed from here.
 	listView := listStyle.Render(m.list.View())
 	viewportView := viewportStyle.Render(m.viewport.View())
-	statsView := m.renderStatsPanel() // A new helper function
+	statsView := m.renderStatsPanel()
 
-	// stack the viewport and stats panel vertically.
-	rightPane := lipgloss.JoinVertical(lipgloss.Left, viewportView, statsView)
-
-	// Use lipgloss to join them horizontally.
+	// --- ASSEMBLE FINAL VIEW ---
+	rightPane := lipgloss.JoinVertical(lipgloss.Top, viewportView, statsView)
 	return lipgloss.JoinHorizontal(lipgloss.Top, listView, rightPane)
 }
 
