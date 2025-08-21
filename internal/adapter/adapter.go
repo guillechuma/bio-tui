@@ -37,6 +37,9 @@ const (
 type Slice struct {
 	// Hold sequence data for the region.
 	Sequence []byte
+	// A generic map to hold summary stats for the slice.
+	// Keys could be "GC Content", "N Count", "Variant Count", etc.
+	Stats map[string]string
 }
 
 // Reader is the universal interface for all file type adapters.

@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -174,9 +175,13 @@ func (m Model) View() string {
 	// Render the list and viewport into their own strings.
 	listView := listStyle.Render(m.list.View())
 	viewportView := viewportStyle.Render(m.viewport.View())
+	statsView := m.renderStatsPanel() // A new helper function
+
+	// stack the viewport and stats panel vertically.
+	rightPane := lipgloss.JoinVertical(lipgloss.Left, viewportView, statsView)
 
 	// Use lipgloss to join them horizontally.
-	return lipgloss.JoinHorizontal(lipgloss.Top, listView, viewportView)
+	return lipgloss.JoinHorizontal(lipgloss.Top, listView, rightPane)
 }
 
 // wrapSequence wraps a DNA sequence to fit within the viewport width,
@@ -252,4 +257,37 @@ func (m *Model) updateViewportContent() tea.Cmd {
 	m.viewport.GotoTop()
 
 	return nil
+}
+
+func (m Model) renderStatsPanel() string {
+	style := m.styles.Inactive
+
+	stats := m.currentSlice.Stats
+	if len(stats) == 0 {
+		return style.Render("")
+	}
+
+	// Get all the keys from the map.
+	keys := make([]string, 0, len(stats))
+	for k := range stats {
+		keys = append(keys, k)
+	}
+
+	// Sort the keys alphabetically for a consistent order.
+	sort.Strings(keys)
+
+	// Build the content string by iterating over the sorted keys.
+	var contentBuilder strings.Builder
+	for _, key := range keys {
+		value := stats[key]
+		// Left-align the key, right-align the value.
+		line := lipgloss.JoinHorizontal(lipgloss.Left,
+			fmt.Sprintf("%-12s", key), // Pad the key for alignment
+			lipgloss.NewStyle().Width(m.viewport.Width-12).Align(lipgloss.Right).Render(value),
+		)
+		contentBuilder.WriteString(line)
+		contentBuilder.WriteString("\n")
+	}
+
+	return style.Render(strings.TrimSpace(contentBuilder.String()))
 }

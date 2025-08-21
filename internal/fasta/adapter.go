@@ -80,8 +80,31 @@ func (a *FastaAdapter) Region(reg adapter.Region) (adapter.Slice, error) {
 		return adapter.Slice{}, err
 	}
 
+	// --- Calculate Stats for the Subsequence ---
+	stats := make(map[string]string)
+	gcCount := 0
+	nCount := 0
+	for _, base := range subsequence {
+		switch base {
+		case 'G', 'g', 'C', 'c':
+			gcCount++
+		case 'N', 'n':
+			nCount++
+		}
+	}
+
+	var gcPercent float64
+	if len(subsequence) > 0 {
+		gcPercent = float64(gcCount) / float64(len(subsequence)) * 100
+	}
+
+	stats["Length"] = fmt.Sprintf("%d bp", len(subsequence))
+	stats["GC Content"] = fmt.Sprintf("%.2f%%", gcPercent)
+	stats["N Count"] = fmt.Sprintf("%d", nCount)
+
 	slice := adapter.Slice{
 		Sequence: subsequence,
+		Stats:    stats,
 	}
 
 	return slice, nil
