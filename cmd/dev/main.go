@@ -2,84 +2,43 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
-	"time"
+	"os"
 
-	"github.com/guillechuma/bio-tui/internal/adapter"
-	"github.com/guillechuma/bio-tui/internal/fasta"
+	"github.com/guillechuma/bio-tui/internal/fastq"
 )
 
 func main() {
-	// Open the hardcoded test file.
-	filePath := "testdata/test.fasta"
-	reader, err := fasta.NewIndexedReader(filePath)
+	// 1. Open the test FASTQ file.
+	f, err := os.Open("testdata/reads.fastq")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("could not open test file: %v", err)
 	}
-	defer reader.Close() // Make sure the file gets closed when main() exits.
+	defer f.Close()
 
-	start := time.Now() // <-- 1. Record start time
-	fmt.Println("Fetching record 'header2'...")
-	record, err := reader.Fetch("header2")
-	if err != nil {
-		log.Fatal(err)
+	// 2. Create a new FASTQ parser.
+	parser := fastq.NewParser(f)
+	fmt.Println("--- Reading FASTQ records ---")
+
+	// 3. Loop through all the records in the file.
+	for {
+		record, err := parser.Next()
+		if err != nil {
+			if err == io.EOF {
+				break // We've reached the end of the file.
+			}
+			log.Fatalf("parser failed: %v", err)
+		}
+
+		// 4. If we got a valid record, print its details.
+		fmt.Printf("Successfully parsed record!\n")
+		fmt.Printf("\tID:   %s\n", record.ID)
+		fmt.Printf("\tSeq:  %s (len: %d)\n", string(record.Seq), len(record.Seq))
+		fmt.Printf("\tQual: %s (len: %d)\n", string(record.Qual), len(record.Qual))
+		fmt.Printf("\tMean Quality: %.2f\n", record.MeanQual())
+		fmt.Printf("\tGC Content:   %.2f%%\n", record.GCContent()*100)
 	}
-	fmt.Printf("Successfully fetched record!\n")
-	fmt.Printf("\tID:  %s\n", record.ID)
-	fmt.Printf("\tSeq: %s\n", string(record.Seq))
-	fmt.Printf("\tGC Content: %.2f%%\n", record.GCContent()*100)
 
-	// // Loop through all the records in the file.
-	// for {
-	// 	record, err := parser.Next()
-	// 	if err != nil {
-	// 		// io.EOF is the error the parser will return when it's done.
-	// 		if err.Error() == "EOF" {
-	// 			break
-	// 		}
-	// 		log.Fatalf("parser failed: %v", err)
-	// 	}
-
-	// 	// If we got here, we have a valid record!
-	// 	fmt.Printf("Successfully parsed record!\n")
-	// 	fmt.Printf("\tID:  %s\n", record.ID)
-	// 	fmt.Printf("\tSeq: %s\n", string(record.Seq))
-	// 	fmt.Printf("\tGC Content: %.2f%%\n", record.GCContent()*100)
-	// }
-
-	duration := time.Since(start) // <-- 2. Calculate elapsed time
-
-	fmt.Println("Done.")
-	fmt.Printf("Fetching took: %s\n", duration) // <-- 3. Print it!
-
-	// 1. Create an instance of your concrete adapter.
-	fa := &fasta.FastaAdapter{}
-
-	// 2. Assign it to a variable of the INTERFACE type.
-	//    This proves your adapter has the right "shape".
-	var rdr adapter.Reader = fa
-
-	// 3. Open the file using the interface method.
-	spec := adapter.OpenSpec{Path: "testdata/test.fasta"}
-	err = rdr.Open(spec)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer reader.Close()
-
-	// 4. Use the interface methods to get data.
-	fmt.Println("Looking up 'header2'...")
-	region, err := rdr.LookupSymbol("header2")
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("Found 'header2' at region: %s:%d-%d\n", region.Ref, region.Start, region.End)
-
-	fmt.Println("\nFetching a sub-region from 'header2'...")
-	subRegion := adapter.Region{Ref: "header2", Start: 3, End: 10}
-	slice, err := rdr.Region(subRegion)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("Sequence for %s:%d-%d is: %s\n", subRegion.Ref, subRegion.Start, subRegion.End, string(slice.Sequence))
+	fmt.Println("--- Done ---")
 }
